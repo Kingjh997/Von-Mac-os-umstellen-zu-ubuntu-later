@@ -71,6 +71,16 @@ def validate(path: pathlib.Path, framework_name: str | None = None) -> None:
                 "Frameworks dylib still depends on external tweak hooking "
                 f"runtime(s): {unwanted!r}"
             )
+        # Frameworks mode must not carry rootless jailbreak-only search paths.
+        from macho_audit import inspect
+        rootless_paths = [
+            item for item in inspect(binary)["rpaths"]
+            if "/var/jb" in item or ".jbroot" in item or "/var/containers/Bundle/tweaksupport" in item
+        ]
+        if rootless_paths:
+            raise ValueError(
+                f"Frameworks dylib contains jailbroken-device rpaths: {rootless_paths!r}"
+            )
     print(
         f"PASS {path}: arm64 dylib, {count} load commands"
         + (f", install_name={install_names[0]}" if install_names else "")
