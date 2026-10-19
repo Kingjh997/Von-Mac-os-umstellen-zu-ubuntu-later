@@ -42,3 +42,34 @@ Workflow: **[Ubuntu IPA Toolkit](.github/workflows/ubuntu-ipa.yml)**.
 - Currently needs an IPA under `input/`, which is excluded from Git. A secure upload interface has not yet been implemented.
 
 Do not commit copyrighted third-party IPA files or private signing material to this public repo. No FairPlay decryption, DRM bypass, Xcode project compilation, tweak injection or Apple app-signing service is implemented.
+
+
+## Original-Xcode-SDK vs. Ubuntu: überprüfbarer Buildvergleich
+
+Der Workflow **[Compare Ubuntu vs Xcode SDKs](.github/workflows/compare-sdks.yml)** verwendet auf beiden Systemen dieselbe *öffentliche, neutrale* Logos-Testquelle (`tweak/Tweak.xm`). Er baut kein Energy-Manager-Menü nach, verändert keine Spielwerte und veröffentlicht weder die Energy-Manager-IPA noch deren Quellcode.
+
+Er ermittelt und protokolliert:
+- Auf macOS: `xcodebuild -version`, Apple-Clang, offizielles iPhoneOS-SDK über `xcrun --sdk iphoneos --show-sdk-path`.
+- Auf Ubuntu: Clang-Versionen, verfügbare Theos-SDKs, Framework-Verzeichnisse, Header und vorhandene Theos-Toolchain-Compiler.
+- Beide Mach-O-Binärdateien: ARM64, Install-Name, Mindest-iOS, tatsächliche SDK-Build-Version, dynamisch verknüpfte Bibliotheken, Suchpfade, Code-Signature-Eintrag und SHA-256.
+- Identität des Quellcodes und der Theos-Revision auf beiden Runnern.
+
+**Bereits bestätigt:** Xcode 16.4 / iPhoneOS 18.5 auf macOS 15; Theos iPhoneOS 16.5 auf Ubuntu 22.04. Beide Systeme konnten aus demselben Quellcode ARM64-Dylibs mit gleichem Install-Name, gleichem iOS-Minimum 14.0 und denselben Bibliotheksabhängigkeiten bauen. Die Binärdateien unterscheiden sich in SDK-Version, Größe und Code-Signature-Eintrag. Das beweist keine identische iPhone-Laufzeit.
+
+**SDK- und Framework-Abweichungen** stehen im GitHub Actions-Artefakt `sdk-xcode-vs-ubuntu-comparison` (Datei `comparison.md`). Beide Runner verwenden ihre jeweils rechtmäßig bereitgestellten SDKs; das originale Apple-SDK wird nicht nach Ubuntu kopiert.
+
+### Laufzeit / IPA statisch prüfen
+
+Das Skript `scripts/ipa_loader_audit.py` untersucht **lokal, ohne Änderung der IPA**, welche ARM64-Frameworks eingebettet sind und ob das ausführbare Hauptprogramm eine erwartete Dylib referenziert:
+
+```bash
+python3 scripts/ipa_loader_audit.py "MeineApp.ipa" --library EMReadOnlyDiagnostics.dylib --output ipa-loader-report.json
+```
+
+Eine eingelagerte Dylib wird dadurch **nicht automatisch ausgeführt**. Für ein sicher nachgewiesenes Laden sind ein kompatibler Ladevorgang, korrekte Signierung und ein Geräte-Laufzeittest notwendig. Das Skript prüft Signierungsmetadaten nicht kryptografisch.
+
+### Frameworks- statt Jailbreak-Paket
+
+`scripts/convert_to_framework_library.py` entfernt in `framework_dylib`-Builds die rootless/roothide-Paketeinstellung, damit keine nur für Jailbreaks gedachten `/var/jb`-/`.jbroot`-Suchpfade entstehen. Der Mach-O-Validator lehnt solche Pfade im Frameworks-Modus nun ab. Diese Änderung betrifft die extrahierte Arbeitskopie des Quellcodes, nicht die eingereichte ZIP.
+
+**Wichtig:** Der originale Quellcode des auf den Screenshots sichtbaren `Lab`-Menüs liegt in den hier geprüften Projekten nicht vor. Ein Wechsel des iOS-SDK erzeugt dieses Menü nicht automatisch. Der Vergleich bestätigt nur die technische Cross-Compile-Fähigkeit.
