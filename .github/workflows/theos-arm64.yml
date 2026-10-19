@@ -61,6 +61,12 @@ jobs:
           fi
           cp "${debs[@]}" dist/
 
+      - name: Create a reusable Theos source ZIP example
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd tweak && zip -q ../dist/UbuntuDemo-source-example.zip Makefile Tweak.xm UbuntuDemo.plist control)
+
       - name: Upload ARM64 dylib and tweak package
         uses: actions/upload-artifact@v4
         with:
