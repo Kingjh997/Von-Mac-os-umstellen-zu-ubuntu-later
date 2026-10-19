@@ -54,6 +54,15 @@ def convert(project: pathlib.Path) -> str:
         ):
             path.write_text("%config(generator=internal);\n" + code, encoding="utf-8")
 
+    # A standalone in-app Frameworks dylib is not a rootless jailbreak package.
+    # Remove automatic /var/jb and .jbroot search paths from this output mode.
+    source, scheme_count = re.subn(
+        r"(?m)^[ \t]*THEOS_PACKAGE_SCHEME[ \t]*[:?+]?=[ \t]*(?:rootless|roothide)[ \t]*(?:\r?\n|$)",
+        "", source
+    )
+    if scheme_count:
+        print("Frameworks mode: disabled rootless/roothide package scheme", file=sys.stderr)
+
     source = source.rstrip() + (
         f"\n{name}_INSTALL_PATH = /usr/local/lib"
         f"\n{name}_LDFLAGS += -Wl,-install_name,@rpath/{name}.dylib\n"
