@@ -8,3 +8,6 @@ theos/
 **/.theos/
 **/packages/
 .DS_Store
+
+# Temporary extraction of source ZIP archives
+work/
