@@ -1,42 +1,44 @@
-# Ubuntu IPA and Theos Toolkit
+# Ubuntu IPA + Theos ZIP-zu-DYLIB Builder
 
-GitHub Actions workflows for experimental iOS IPA processing and **ARM64 Logos tweak cross-compilation on Ubuntu**, without a macOS runner or Xcode.
+Build and package supported iOS ARM64 Theos/Logos tweaks **using Ubuntu GitHub Actions (no macOS runner, no Xcode)**. The GitHub Actions artifacts are automatically downloadable as ZIP files.
 
-## 1. Compile your own test tweak (Ubuntu / Theos)
+## Option 1: Download a ready-made ZIP containing .dylib and .deb
 
-Workflow: [Ubuntu Theos ARM64](.github/workflows/theos-arm64.yml)
+Workflow: **[Ubuntu Theos ARM64](.github/workflows/theos-arm64.yml)**.
 
-- Runner: `ubuntu-22.04`
-- Theos setup: `Randomblock1/theos-action@v1` (installs toolchain and iOS SDK)
-- Sources: `tweak/Tweak.xm` (Objective-C/Logos), `tweak/Makefile`, `tweak/UbuntuDemo.plist`, `tweak/control`
-- Build command: `make clean package FINALPACKAGE=1`
-- Output: downloadable GitHub Actions artifact with `UbuntuDemo-arm64.dylib` and a `.deb` package
-- Checks: `scripts/check_macho_arm64.py` verifies ARM64 / Mach-O dylib header
+1. Open [Actions](../../actions) and select **Ubuntu Theos ARM64**.
+2. Run the workflow on `main` (or select a successful run).
+3. Scroll to **Artifacts** and download **UbuntuDemo-arm64-Theos.zip**.
+4. Extract it to get **UbuntuDemo-arm64.dylib**, its **.deb package**, and **UbuntuDemo-source-example.zip** (the example project source code).
 
-### Start it
+This runs on Ubuntu 22.04 and compiles the version-controlled sample in `tweak/`. The reusable source ZIP can be uploaded back using option 2.
 
-1. Open **Actions** in this repository.
-2. Select **Ubuntu Theos ARM64**, choose **Run workflow** on `main`.
-3. When the run succeeds, download **UbuntuDemo-arm64-Theos** in **Artifacts**.
-4. Edit `tweak/Tweak.xm` to experiment with your own Logos code and push your change.
+## Option 2: Upload a Theos source ZIP; get .dylib and .deb back
 
-This is a **test tweak** filtered to the iOS Settings app. It logs view appearances and does not remove ads or unlock features. It is built for tweak-injection environments: **the `.deb` is not an installable IPA**. Packaging a tweak inside a sideloaded IPA and properly re-signing it is a separate process.
+Workflow: **[Ubuntu Build from ZIP](.github/workflows/build-from-zip.yml)**.
 
-**Important:** Theos on Ubuntu can build supported Objective-C/Logos ARM64 components. It does **not** replace all Xcode features, and it does not automatically produce normal standalone App Store apps.
+1. Prepare a ZIP containing the **source files for one Theos tweak** (not just an IPA or an already compiled binary). It needs **Makefile** and **control** in the same directory, alongside source files such as `Tweak.xm` and `YourTweak.plist`. A single enclosing folder is fine.
+2. Open the **[source-zips folder](source-zips)** on GitHub.
+3. Choose **Add file → Upload files**, upload `MyTweak.zip` to this folder, then **Commit changes** to `main`. **Do not upload private keys, certificates, credentials or third-party source code without permission.** This repository is public.
+4. GitHub automatically starts **Ubuntu Build from ZIP**. Alternatively, open **Actions → Ubuntu Build from ZIP → Run workflow**. Leave `zip_path` blank to compile all ZIPs in `source-zips/`, or use `source-zips/MyTweak.zip` to build just one file.
+5. After a successful run, download the **Ubuntu-built-dylib-and-deb.zip** artifact. Inside, find a folder named for each source ZIP containing its built ARM64 **.dylib** and **.deb**.
 
-## 2. Validate or repackage an existing IPA
+**Test ZIP:** `source-zips/UbuntuDemo-test-source.zip` contains a small test tweak to validate the end-to-end workflow. Use it to check the setup before providing your own code.
 
-Workflow: [Ubuntu IPA Toolkit](.github/workflows/ubuntu-ipa.yml)
+### Important technical limits
 
-Current features:
-- Validate ZIP structure, `Payload/*.app/Info.plist`, app executable and bundle identifier.
-- Repackage an existing IPA unchanged.
-- Upload a validation report or repackaged **unsigned** IPA.
+- These ZIPs contain **Theos source code**, not arbitrary files: renaming an IPA or binary to `.zip` cannot produce tweak source code.
+- The pipeline builds supported **ARM64 Mach-O dylibs** and **Theos Debian tweak packages** using a Linux cross-compiler and an iOS SDK.
+- Building a tweak does not automatically install or inject it into an IPA, make it compatible with jailed iPhones, or sign an IPA for ESign. iOS app injection and valid signing require separate steps.
+- Not all Xcode or SwiftUI projects can be built under Linux.
+- Source ZIPs contain executable build instructions. **Only upload trusted source code.** ZIP extraction blocks path traversal, links, unsafe entry types, encryption and oversized archives, but cannot make malicious Makefiles safe to run.
 
-The IPA workflow expects a file in `input/` and fails until one is provided. Do **not** commit third-party copyrighted IPA files or signing credentials to this public repository. A secure private upload mechanism can be added later.
+## Option 3: Validate or repackage existing IPA archives (without compiling code)
 
-Local use: `python3 scripts/ipa_tool.py validate your.ipa --output output`.
+Workflow: **[Ubuntu IPA Toolkit](.github/workflows/ubuntu-ipa.yml)**.
 
-## Limits
+- Checks IPA ZIP layout, `Payload/*.app/Info.plist`, bundle ID, executable.
+- Optionally repackages the IPA as an **unsigned** archive.
+- Currently needs an IPA under `input/`, which is excluded from Git. A secure upload interface has not yet been implemented.
 
-No FairPlay decryption, DRM bypass, signing certificates, SwiftUI/Xcode project support or tweak injection is included. An altered signed iOS app bundle generally needs signing again to install, and not every tweak runs inside jailed apps.
+Do not commit copyrighted third-party IPA files or private signing material to this public repo. No FairPlay decryption, DRM bypass, Xcode project compilation, tweak injection or Apple app-signing service is implemented.
