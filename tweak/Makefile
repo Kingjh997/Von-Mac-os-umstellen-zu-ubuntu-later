@@ -1,0 +1,13 @@
+# Cross-compile an arm64 iOS Logos tweak on Ubuntu with Theos.
+TARGET = iphone:clang:latest:14.0
+ARCHS = arm64
+FINALPACKAGE = 1
+
+include $(THEOS)/makefiles/common.mk
+
+TWEAK_NAME = UbuntuDemo
+UbuntuDemo_FILES = Tweak.xm
+UbuntuDemo_CFLAGS = -fobjc-arc
+UbuntuDemo_FRAMEWORKS = UIKit Foundation
+
+include $(THEOS_MAKE_PATH)/tweak.mk
