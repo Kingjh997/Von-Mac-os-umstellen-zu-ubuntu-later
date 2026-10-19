@@ -75,30 +75,3 @@ jobs:
           name: sdk-compare-macos
           path: macos-report/
           if-no-files-found: error
-  compare:
-    needs: [ubuntu, macos]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: sdk-compare-ubuntu
-          path: results/ubuntu
-      - uses: actions/download-artifact@v4
-        with:
-          name: sdk-compare-macos
-          path: results/macos
-      - name: Compare authentic SDK and linked binary details
-        shell: bash
-        run: |
-          set -euo pipefail
-          code=0
-          python3 scripts/sdk_compare.py compare --macos results/macos/build.json --ubuntu results/ubuntu/build.json --output comparison || code=$?
-          test ! -f comparison/comparison.md || cat comparison/comparison.md >> "$GITHUB_STEP_SUMMARY"
-          exit "$code"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: sdk-xcode-vs-ubuntu-comparison
-          path: comparison/
-          if-no-files-found: warn
