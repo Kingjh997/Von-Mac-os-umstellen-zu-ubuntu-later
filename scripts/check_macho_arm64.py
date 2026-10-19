@@ -74,7 +74,7 @@ def validate(path: pathlib.Path, framework_name: str | None = None) -> None:
         # Frameworks mode must not carry rootless jailbreak-only search paths.
         from macho_audit import inspect
         rootless_paths = [
-            item for item in inspect(binary)["rpaths"]
+            item for item in inspect(data)["rpaths"]
             if "/var/jb" in item or ".jbroot" in item or "/var/containers/Bundle/tweaksupport" in item
         ]
         if rootless_paths:
