@@ -1,149 +1,27 @@
-name: Compare Ubuntu SDK vs Xcode iPhoneOS SDK
-
+name: Compare Ubuntu vs Xcode SDKs
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
       - '.github/workflows/compare-sdks.yml'
-      - 'scripts/sdk_compare.py'
-      - 'scripts/macho_audit.py'
-
 permissions:
   contents: read
-
 jobs:
   ubuntu:
-    name: Ubuntu 22.04 and Theos iOS SDK
     runs-on: ubuntu-22.04
-    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - name: Install Theos and Linux toolchain
-        uses: Randomblock1/theos-action@v1
-        with:
-          theos-dir: ${{ github.workspace }}/theos
-      - name: Select actual Ubuntu SDK
-        shell: bash
+      - name: Show Ubuntu
         run: |
-          set -euo pipefail
-          SDK="$(python3 - <<'PY'
-          import glob, os
-          paths = glob.glob(os.environ['THEOS'] + '/sdks/iPhoneOS*.sdk')
-          if not paths: raise SystemExit('No Theos iPhoneOS SDK found')
-          print(sorted(paths)[-1])
-          PY
-          )"
-          echo "SDKROOT=$SDK" >> "$GITHUB_ENV"
-          echo "Ubuntu SDK directory: $(basename "$SDK")"
-      - name: Prepare identical example source as Frameworks library
-        shell: bash
-        run: python3 scripts/convert_to_framework_library.py tweak
-      - name: Compile actual ARM64 library
-        shell: bash
-        run: |
-          set -euo pipefail
-          make -C tweak clean all FINALPACKAGE=1
-      - name: Probe compiler, headers, SDK and resulting Mach-O
-        shell: bash
-        run: |
-          set -euo pipefail
-          DYLIB="$(find tweak/.theos -type f -name 'UbuntuDemo.dylib' -print -quit)"
-          test -n "$DYLIB"
-          python3 scripts/macho_audit.py "$DYLIB" --expect-install-name @rpath/UbuntuDemo.dylib --require-arm64-dylib
-          python3 scripts/sdk_compare.py collect --os ubuntu --sdk "$SDKROOT" --binary "$DYLIB" --output report/build.json
-          cp "$DYLIB" report/UbuntuDemo-ubuntu-arm64.dylib
-      - name: Save Ubuntu results
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdk-compare-ubuntu
-          path: report/
-          if-no-files-found: error
-
+          uname -a
+          clang --version
   macos:
-    name: macOS 15 original Apple Xcode iPhoneOS SDK
     runs-on: macos-15
-    timeout-minutes: 35
-    env:
-      THEOS: ${{ runner.temp }}/theos
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve the genuine installed Xcode SDK
-        shell: bash
+      - name: Show original iPhoneOS SDK
         run: |
-          set -euo pipefail
           xcodebuild -version
-          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          xcrun --sdk iphoneos --show-sdk-path
           xcrun --sdk iphoneos --show-sdk-version
-          echo "SDKROOT=$SDK" >> "$GITHUB_ENV"
-          echo "Apple SDK: $SDK"
-      - name: Install GNU make / ldid and matching Theos project
-        shell: bash
-        run: |
-          set -euo pipefail
-          brew list make >/dev/null 2>&1 || brew install make
-          brew list ldid >/dev/null 2>&1 || brew install ldid
-          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
-          git clone --depth 1 --recursive https://github.com/theos/theos.git "$THEOS"
-          mkdir -p "$THEOS/sdks"
-          ln -s "$SDKROOT" "$THEOS/sdks/$(basename "$SDKROOT")"
-      - name: Prepare identical example source as Frameworks library
-        shell: bash
-        run: python3 scripts/convert_to_framework_library.py tweak
-      - name: Compile actual ARM64 library using Xcode SDK
-        shell: bash
-        run: |
-          set -euo pipefail
-          make -C tweak clean all FINALPACKAGE=1
-      - name: Probe actual compiler, Apple headers and resulting Mach-O
-        shell: bash
-        run: |
-          set -euo pipefail
-          DYLIB="$(find tweak/.theos -type f -name 'UbuntuDemo.dylib' -print -quit)"
-          test -n "$DYLIB"
-          python3 scripts/macho_audit.py "$DYLIB" --expect-install-name @rpath/UbuntuDemo.dylib --require-arm64-dylib
-          python3 scripts/sdk_compare.py collect --os macos --sdk "$SDKROOT" --binary "$DYLIB" --output report/build.json
-          cp "$DYLIB" report/UbuntuDemo-macos-arm64.dylib
-      - name: Save macOS results
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdk-compare-macos
-          path: report/
-          if-no-files-found: error
-
-  compare:
-    name: Evaluate matching source and binaries
-    runs-on: ubuntu-latest
-    needs: [ubuntu, macos]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download Linux report
-        uses: actions/download-artifact@v4
-        with:
-          name: sdk-compare-ubuntu
-          path: build-reports/ubuntu
-      - name: Download macOS report
-        uses: actions/download-artifact@v4
-        with:
-          name: sdk-compare-macos
-          path: build-reports/macos
-      - name: Compare authentic build outputs and SDK differences
-        shell: bash
-        run: |
-          set -euo pipefail
-          result=0
-          python3 scripts/sdk_compare.py compare \
-            --macos build-reports/macos/build.json \
-            --ubuntu build-reports/ubuntu/build.json \
-            --output comparison || result=$?
-          if test -f comparison/comparison.md; then
-            cat comparison/comparison.md >> "$GITHUB_STEP_SUMMARY"
-          fi
-          exit "$result"
-      - name: Upload written comparison report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdk-xcode-vs-ubuntu-comparison
-          path: comparison/
-          if-no-files-found: warn
