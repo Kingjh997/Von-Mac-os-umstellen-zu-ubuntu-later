@@ -1,54 +1,70 @@
-name: Ubuntu Build from ZIP
+name: Ubuntu ZIP to Frameworks DYLIB
 
 on:
   push:
     branches: [main]
     paths:
       - 'source-zips/*.zip'
+      - '.github/workflows/build-from-zip.yml'
+      - 'scripts/prepare_tweak_zip.py'
+      - 'scripts/convert_to_framework_library.py'
+      - 'scripts/check_macho_arm64.py'
   workflow_dispatch:
     inputs:
       zip_path:
-        description: 'Optional ZIP file, e.g. source-zips/MyTweak.zip (blank: build all ZIPs)'
+        description: 'Optional source-zips/YourSource.zip (leave empty to build all)'
+        required: false
         type: string
         default: ''
-        required: false
+      output_mode:
+        description: 'Build standalone Frameworks .dylib or classic Theos tweak .dylib/.deb'
+        type: choice
+        options:
+          - framework_dylib
+          - tweak_package
+        default: framework_dylib
 
 permissions:
   contents: read
 
 jobs:
   zip-to-dylib:
-    name: Compile ZIP sources into arm64 dylib + deb
+    name: Turn a Theos source ZIP into arm64 .dylib
     runs-on: ubuntu-22.04
     timeout-minutes: 40
     env:
       INPUT_ZIP: ${{ inputs.zip_path }}
+      OUTPUT_MODE: ${{ inputs.output_mode || 'framework_dylib' }}
     steps:
-      - name: Checkout source code and ZIP files
+      - name: Checkout source ZIP files
         uses: actions/checkout@v4
 
-      - name: Set up Theos + iOS SDK on Ubuntu
+      - name: Set up Theos with iOS SDK on Ubuntu
         uses: Randomblock1/theos-action@v1
         with:
           theos-dir: ${{ github.workspace }}/theos
 
-      - name: Unpack, compile and validate uploaded ZIP projects
+      - name: Unpack ZIP, compile and package frameworks dylib
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
+          if [[ "$OUTPUT_MODE" != "framework_dylib" && "$OUTPUT_MODE" != "tweak_package" ]]; then
+            echo "::error::Unsupported build mode"
+            exit 1
+          fi
+
           if [[ -n "${INPUT_ZIP:-}" ]]; then
             if [[ ! "$INPUT_ZIP" =~ ^source-zips/[A-Za-z0-9_.-]+\.zip$ ]]; then
-              echo "::error::Only source-zips/<filename>.zip is allowed."
+              echo "::error::Only source-zips/<name>.zip is allowed."
               exit 1
             fi
             archives=("$INPUT_ZIP")
           else
             mapfile -d '' archives < <(find source-zips -maxdepth 1 -type f -name '*.zip' -print0 | sort -z)
           fi
-
           if (( ${#archives[@]} == 0 )); then
-            echo "::error::No source ZIP found. Upload your Theos ZIP under source-zips/."
+            echo "::error::No source ZIP found in source-zips/"
             exit 1
           fi
 
@@ -56,48 +72,68 @@ jobs:
           for archive in "${archives[@]}"; do
             ((count+=1))
             if [[ ! -f "$archive" ]]; then
-              echo "::error::ZIP not found: $archive"
+              echo "::error::Source ZIP missing: $archive"
               exit 1
             fi
-            archive_name="$(basename "$archive" .zip)"
-            if [[ ! "$archive_name" =~ ^[A-Za-z0-9_.-]+$ ]]; then
-              echo "::error::Use letters, numbers, dots, _ or - in ZIP file names."
+            zip_name="$(basename "$archive" .zip)"
+            if [[ ! "$zip_name" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+              echo "::error::Invalid ZIP name: $zip_name"
               exit 1
             fi
 
-            echo "::group::Building $archive_name"
+            echo "::group::Build $zip_name as $OUTPUT_MODE"
             project="$(python3 scripts/prepare_tweak_zip.py "$archive" --destination "work/project-$count")"
-            echo "Theos project: $project"
-            make -C "$project" clean package FINALPACKAGE=1
-
-            output_dir="dist/$archive_name"
+            echo "Project directory: $project"
+            output_dir="dist/$zip_name"
             mkdir -p "$output_dir"
-            libs=0
-            while IFS= read -r -d '' dylib; do
-              python3 scripts/check_macho_arm64.py "$dylib"
-              cp "$dylib" "$output_dir/$(basename "$dylib")"
-              ((libs+=1))
-            done < <(find "$project/.theos" -type f -name '*.dylib' -print0)
-            if (( libs == 0 )); then
-              echo "::error::No ARM64 .dylib generated for $archive_name"
-              exit 1
-            fi
 
-            mapfile -d '' debs < <(find "$project/packages" -maxdepth 1 -type f -name '*.deb' -print0)
-            if (( ${#debs[@]} == 0 )); then
-              echo "::error::No .deb generated for $archive_name"
-              exit 1
+            if [[ "$OUTPUT_MODE" == "framework_dylib" ]]; then
+              lib_name="$(python3 scripts/convert_to_framework_library.py "$project")"
+              echo "Standalone framework library: $lib_name"
+              make -C "$project" clean all FINALPACKAGE=1
+              dylib="$(find "$project/.theos" -type f -name "$lib_name.dylib" -print -quit)"
+              if [[ -z "$dylib" ]]; then
+                echo "::error::No $lib_name.dylib was compiled"
+                exit 1
+              fi
+              python3 scripts/check_macho_arm64.py "$dylib" --frameworks-name "$lib_name"
+              mkdir -p "$output_dir/Frameworks"
+              cp "$dylib" "$output_dir/Frameworks/$lib_name.dylib"
+              cp "$dylib" "$output_dir/$lib_name-arm64.dylib"
+              printf '%s\n' \
+                "Copy Frameworks/$lib_name.dylib into the target .app/Frameworks folder." \
+                "Copying alone does NOT load the library. An authorized injector" \
+                "must add an @rpath/$lib_name.dylib Mach-O load command," \
+                "then the app bundle must be correctly signed and installed." \
+                "Runtime compatibility with any third-party app is not guaranteed." \
+                > "$output_dir/INSTALLATION.txt"
+            else
+              make -C "$project" clean package FINALPACKAGE=1
+              libs=0
+              while IFS= read -r -d '' dylib; do
+                python3 scripts/check_macho_arm64.py "$dylib"
+                cp "$dylib" "$output_dir/$(basename "$dylib")"
+                ((libs+=1))
+              done < <(find "$project/.theos" -type f -name '*.dylib' -print0)
+              if (( libs == 0 )); then
+                echo "::error::Theos generated no dylib for $zip_name"
+                exit 1
+              fi
+              mapfile -d '' debs < <(find "$project/packages" -maxdepth 1 -type f -name '*.deb' -print0)
+              if (( ${#debs[@]} == 0 )); then
+                echo "::error::Theos generated no deb for $zip_name"
+                exit 1
+              fi
+              cp "${debs[@]}" "$output_dir/"
             fi
-            cp "${debs[@]}" "$output_dir/"
             echo "::endgroup::"
           done
+          echo "Processed $count ZIP archive(s) in mode $OUTPUT_MODE"
 
-          echo "Built $count ZIP project(s)"
-
-      - name: Upload .dylib + .deb inside downloadable artifact ZIP
+      - name: Download results as ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Ubuntu-built-dylib-and-deb
+          name: Ubuntu-Frameworks-or-Theos-results
           path: dist/
           if-no-files-found: error
           retention-days: 30
