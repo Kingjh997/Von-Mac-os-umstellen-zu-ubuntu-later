@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/compare-sdks.yml'
+      - 'scripts/sdk_compare.py'
 permissions:
   contents: read
 jobs:
