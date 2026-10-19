@@ -1,0 +1,10 @@
+# IPA inputs and products should not be committed to this public repository.
+input/*.ipa
+output/
+dist/
+*.ipa
+# Theos temporary build and package outputs
+theos/
+**/.theos/
+**/packages/
+.DS_Store
