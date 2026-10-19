@@ -1,0 +1,38 @@
+name: Ubuntu IPA Toolkit
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Validate or repackage an IPA"
+        required: true
+        type: choice
+        options:
+          - validate
+          - repackage
+        default: validate
+jobs:
+  ipa:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python dependencies
+        run: python3 --version
+      - name: Validate / repackage
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          if ! compgen -G 'input/*.ipa' > /dev/null; then
+            echo "::error::No IPA found in input/. Add a permitted IPA locally or use a private artifact workflow."
+            exit 1
+          fi
+          python3 scripts/ipa_tool.py "${{ inputs.mode }}" input/*.ipa --output output
+      - name: Upload result
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-ipa-result
+          path: output/
+          if-no-files-found: error
