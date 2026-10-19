@@ -1,0 +1,8 @@
+Package: com.kingjh997.ubuntudemo
+Name: Ubuntu Demo
+Version: 0.1.0
+Architecture: iphoneos-arm
+Description: Minimal Logos test tweak built on Ubuntu without Xcode
+Maintainer: Kingjh997
+Author: Kingjh997
+Section: Tweaks
