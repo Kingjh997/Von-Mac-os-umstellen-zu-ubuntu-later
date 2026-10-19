@@ -21,7 +21,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SDK="$(find "$THEOS/sdks" -maxdepth 1 -name 'iPhoneOS*.sdk' | sort | tail -n1)"
+          SDK="$(find "$THEOS/sdks" -maxdepth 1 -name 'iPhoneOS*.sdk' | sort -V | tail -n1)"
           test -d "$SDK"
           python3 scripts/convert_to_framework_library.py tweak
           make -C tweak clean all FINALPACKAGE=1
