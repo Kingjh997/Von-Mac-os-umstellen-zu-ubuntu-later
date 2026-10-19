@@ -1,0 +1,106 @@
+name: Ubuntu Build from ZIP
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'source-zips/*.zip'
+      - '.github/workflows/build-from-zip.yml'
+      - 'scripts/prepare_tweak_zip.py'
+      - 'scripts/check_macho_arm64.py'
+  workflow_dispatch:
+    inputs:
+      zip_path:
+        description: 'Optional ZIP file, e.g. source-zips/MyTweak.zip (blank: build all ZIPs)'
+        type: string
+        default: ''
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  zip-to-dylib:
+    name: Compile ZIP sources into arm64 dylib + deb
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    env:
+      INPUT_ZIP: ${{ inputs.zip_path }}
+    steps:
+      - name: Checkout source code and ZIP files
+        uses: actions/checkout@v4
+
+      - name: Set up Theos + iOS SDK on Ubuntu
+        uses: Randomblock1/theos-action@v1
+        with:
+          theos-dir: ${{ github.workspace }}/theos
+
+      - name: Unpack, compile and validate uploaded ZIP projects
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          if [[ -n "${INPUT_ZIP:-}" ]]; then
+            if [[ ! "$INPUT_ZIP" =~ ^source-zips/[A-Za-z0-9_.-]+\.zip$ ]]; then
+              echo "::error::Only source-zips/<filename>.zip is allowed."
+              exit 1
+            fi
+            archives=("$INPUT_ZIP")
+          else
+            mapfile -d '' archives < <(find source-zips -maxdepth 1 -type f -name '*.zip' -print0 | sort -z)
+          fi
+
+          if (( ${#archives[@]} == 0 )); then
+            echo "::error::No source ZIP found. Upload your Theos ZIP under source-zips/."
+            exit 1
+          fi
+
+          count=0
+          for archive in "${archives[@]}"; do
+            ((count+=1))
+            if [[ ! -f "$archive" ]]; then
+              echo "::error::ZIP not found: $archive"
+              exit 1
+            fi
+            archive_name="$(basename "$archive" .zip)"
+            if [[ ! "$archive_name" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+              echo "::error::Use letters, numbers, dots, _ or - in ZIP file names."
+              exit 1
+            fi
+
+            echo "::group::Building $archive_name"
+            project="$(python3 scripts/prepare_tweak_zip.py "$archive" --destination "work/project-$count")"
+            echo "Theos project: $project"
+            make -C "$project" clean package FINALPACKAGE=1
+
+            output_dir="dist/$archive_name"
+            mkdir -p "$output_dir"
+            libs=0
+            while IFS= read -r -d '' dylib; do
+              python3 scripts/check_macho_arm64.py "$dylib"
+              cp "$dylib" "$output_dir/$(basename "$dylib")"
+              ((libs+=1))
+            done < <(find "$project/.theos" -type f -name '*.dylib' -print0)
+            if (( libs == 0 )); then
+              echo "::error::No ARM64 .dylib generated for $archive_name"
+              exit 1
+            fi
+
+            mapfile -d '' debs < <(find "$project/packages" -maxdepth 1 -type f -name '*.deb' -print0)
+            if (( ${#debs[@]} == 0 )); then
+              echo "::error::No .deb generated for $archive_name"
+              exit 1
+            fi
+            cp "${debs[@]}" "$output_dir/"
+            echo "::endgroup::"
+          done
+
+          echo "Built $count ZIP project(s)"
+
+      - name: Upload .dylib + .deb inside downloadable artifact ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ubuntu-built-dylib-and-deb
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
