@@ -23,6 +23,13 @@ jobs:
       - name: Check out the game source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: Restore pinned Theos toolchain and SDK cache
+        id: theos-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ github.workspace }}/theos
+          key: theos-ubuntu-22.04-action4e23d15-sdk0222fd54-v1
+
       - name: Install pinned Theos toolchain and public iPhoneOS SDK
         uses: Randomblock1/theos-action@4e23d15886bca77b5f7c462a82567e0de33ebe0b # v1
         with:
@@ -57,7 +64,7 @@ jobs:
           header = Path(sys.argv[1]).read_bytes()[:32]
           if len(header) != 32:
               raise SystemExit("App executable has a truncated Mach-O header")
-          magic, cpu_type, file_type, *_ = struct.unpack("<IiiIIIII", header)
+          magic, cpu_type, cpu_subtype, file_type, *_ = struct.unpack("<IiiIIIII", header)
           if magic != 0xFEEDFACF or cpu_type != 0x0100000C or file_type != 2:
               raise SystemExit(
                   f"Expected 64-bit arm64 iOS app executable; "
