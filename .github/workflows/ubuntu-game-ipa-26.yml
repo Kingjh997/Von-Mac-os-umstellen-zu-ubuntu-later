@@ -28,7 +28,7 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ github.workspace }}/theos
-          key: theos-ubuntu-26.04-action4e23d15-sdk0222fd54-v2
+          key: theos-ubuntu-26.04-action4e23d15-sdk0222fd54-v3
 
       - name: Install pinned Theos toolchain and public iPhoneOS SDK
         shell: bash
@@ -50,8 +50,15 @@ jobs:
             tmp_sdk="$(mktemp -d)"
             curl -fL --retry 3 https://github.com/theos/sdks/archive/0222fd5413cf4b9af096f37b4621afa2688572f7.zip -o "$tmp_sdk/sdk.zip"
             unzip -q "$tmp_sdk/sdk.zip" -d "$tmp_sdk"
-            find "$tmp_sdk" -type d -name '*.sdk' -exec cp -R {} "$THEOS/sdks/" \;
-            test -n "$(find "$THEOS/sdks" -maxdepth 1 -type d -name '*.sdk' -print -quit)"
+            shopt -s nullglob
+            sdk_bundles=("$tmp_sdk"/*/*.sdk)
+            if (( ${#sdk_bundles[@]} == 0 )); then
+              echo "::error::Pinned SDK archive contains no SDK bundles"
+              find "$tmp_sdk" -maxdepth 2 -print
+              exit 1
+            fi
+            cp -R "${sdk_bundles[@]}" "$THEOS/sdks/"
+            test -n "$(ls -A "$THEOS/sdks")"
             rm -rf "$tmp_sdk"
           fi
 
@@ -60,7 +67,7 @@ jobs:
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ github.workspace }}/theos
-          key: theos-ubuntu-26.04-action4e23d15-sdk0222fd54-v2
+          key: theos-ubuntu-26.04-action4e23d15-sdk0222fd54-v3
 
       - name: Report Ubuntu build environment
         shell: bash
