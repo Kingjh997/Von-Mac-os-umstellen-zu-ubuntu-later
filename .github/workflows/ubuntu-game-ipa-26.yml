@@ -48,7 +48,8 @@ jobs:
           fi
           if [[ ! -d "$THEOS/makefiles" ]]; then
             tmp_theos="$(mktemp -d)"
-            git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/theos/theos "$tmp_theos/theos"
+            git clone --depth 1 https://github.com/theos/theos "$tmp_theos/theos"
+            git -C "$tmp_theos/theos" submodule update --init --depth 1 vendor/include vendor/lib
             rsync -a "$tmp_theos/theos/" "$THEOS/"
             rm -rf "$tmp_theos"
           fi
