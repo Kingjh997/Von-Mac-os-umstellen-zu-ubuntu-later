@@ -48,7 +48,7 @@ jobs:
             ${{ github.workspace }}/theos/vendor/lib
           key: theos-core-ubuntu-26.04-304e0799973e8145f32e4ca2de6c747a84b758ce-v2
 
-      - name: Install pinned Theos toolchain and public iPhoneOS SDK
+      - name: Prepare pinned Theos, toolchain and iPhoneOS 16.5 SDK
         shell: bash
         run: |
           set -euo pipefail
