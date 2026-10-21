@@ -36,6 +36,13 @@ jobs:
           theos-dir: ${{ github.workspace }}/theos
           theos-sdks-branch: 0222fd5413cf4b9af096f37b4621afa2688572f7
 
+      - name: Save pinned Theos toolchain and SDK cache
+        if: steps.theos-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ github.workspace }}/theos
+          key: theos-ubuntu-22.04-action4e23d15-sdk0222fd54-v1
+
       - name: Report Ubuntu build environment
         shell: bash
         run: |
@@ -55,6 +62,7 @@ jobs:
             echo "::error::Theos did not produce TapSprint.app"
             exit 1
           fi
+          cp game/Info.plist "$app/Info.plist"
           test -f "$app/TapSprint"
           python3 - "$app/TapSprint" <<'PY'
           import struct
@@ -102,7 +110,7 @@ jobs:
           {
             echo '### Ubuntu IPA result'
             echo 'TapSprint was compiled from original Objective-C/UIKit source on Ubuntu 22.04 with the pinned Theos toolchain and public iPhoneOS16.5 SDK.'
-            echo 'The IPA is an unsigned build artifact. A valid Apple signing certificate and provisioning profile are still needed for installation on a stock iPhone.'
+            echo 'The IPA has no Apple certificate or provisioning profile. Re-sign it with a valid certificate/profile before installation on a stock iPhone.'
             echo 'No macOS/Xcode runner, copied Apple SDK, third-party game source, or iPhone runtime test was used.'
           } >> "$GITHUB_STEP_SUMMARY"
 
