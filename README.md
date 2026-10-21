@@ -33,13 +33,17 @@ Workflow: **[Ubuntu ZIP to Frameworks DYLIB](.github/workflows/build-from-zip.ym
 - Not all Xcode or SwiftUI projects can be built under Linux.
 - Source ZIPs contain executable build instructions. **Only upload trusted source code.** ZIP extraction blocks path traversal, links, unsafe entry types, encryption and oversized archives, but cannot make malicious Makefiles safe to run.
 
-## Option 3: Validate or repackage existing IPA archives (without compiling code)
+## Option 3: Create or check an IPA on Ubuntu
 
-Workflow: **[Ubuntu IPA Toolkit](.github/workflows/ubuntu-ipa.yml)**.
+Workflow: **[Ubuntu IPA Toolkit](.github/workflows/ubuntu-ipa.yml)**; the game build workflows also use the same tool.
 
-- Checks IPA ZIP layout, `Payload/*.app/Info.plist`, bundle ID, executable.
-- Optionally repackages the IPA as an **unsigned** archive.
-- Currently needs an IPA under `input/`, which is excluded from Git. A secure upload interface has not yet been implemented.
+- `create`: packages one `.app` directory as `Payload/<App>.app` inside an IPA. It keeps bundle files and safe relative symlinks, stores large files without wasting CPU on compression, and checks ZIP CRCs.
+- `validate`: checks archive paths, app Info.plist, bundle ID, executable, symlinks and ZIP integrity.
+- `repackage`: copies IPA entries in streaming chunks, so large app files are not loaded all at once.
+- The helper uses Python's standard library and contains no copied Xcode or third-party packaging implementation.
+- It creates the IPA container; it does not run Xcode, create an Apple certificate or sign an app for installation on a stock iPhone.
+
+For the Toolkit workflow, place exactly one `.app` directory directly in `input/` and choose `create`; for checking or repacking, place exactly one `.ipa` there. The `input/` folder is excluded from Git.
 
 Do not commit copyrighted third-party IPA files or private signing material to this public repo. No FairPlay decryption, DRM bypass, Xcode project compilation, tweak injection or Apple app-signing service is implemented.
 
