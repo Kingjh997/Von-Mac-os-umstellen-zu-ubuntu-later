@@ -1,0 +1,123 @@
+name: Ubuntu TapSprint IPA test (26.04)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ubuntu-game-ipa-26.yml'
+      - 'game/**'
+      - 'scripts/check_macho_arm64.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa:
+    name: Build TapSprint IPA on Ubuntu 26.04
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    env:
+      THEOS: ${{ github.workspace }}/theos
+    steps:
+      - name: Check out the game source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Restore pinned Theos toolchain and SDK cache
+        id: theos-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ github.workspace }}/theos
+          key: theos-ubuntu-26.04-action4e23d15-sdk0222fd54-v1
+
+      - name: Install pinned Theos toolchain and public iPhoneOS SDK
+        uses: Randomblock1/theos-action@4e23d15886bca77b5f7c462a82567e0de33ebe0b # v1
+        with:
+          theos-dir: ${{ github.workspace }}/theos
+          theos-sdks-branch: 0222fd5413cf4b9af096f37b4621afa2688572f7
+
+      - name: Save pinned Theos toolchain and SDK cache
+        if: steps.theos-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ github.workspace }}/theos
+          key: theos-ubuntu-26.04-action4e23d15-sdk0222fd54-v1
+
+      - name: Report Ubuntu build environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Runner: $RUNNER_OS / $RUNNER_ARCH"
+          echo "Theos: $THEOS"
+          ls -la "$THEOS/sdks"
+          find "$THEOS/toolchain" -type f -name clang -perm /111 -print -quit
+
+      - name: Compile and verify the original UIKit game
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -C game clean all FINALPACKAGE=1
+          app="$(find game/.theos -type d -name 'TapSprint.app' -print -quit)"
+          if [[ -z "$app" ]]; then
+            echo "::error::Theos did not produce TapSprint.app"
+            exit 1
+          fi
+          cp game/Info.plist "$app/Info.plist"
+          test -f "$app/TapSprint"
+          python3 - "$app/TapSprint" <<'PY'
+          import struct
+          import sys
+          from pathlib import Path
+
+          header = Path(sys.argv[1]).read_bytes()[:32]
+          if len(header) != 32:
+              raise SystemExit("App executable has a truncated Mach-O header")
+          magic, cpu_type, cpu_subtype, file_type, *_ = struct.unpack("<IiiIIIII", header)
+          if magic != 0xFEEDFACF or cpu_type != 0x0100000C or file_type != 2:
+              raise SystemExit(
+                  f"Expected 64-bit arm64 iOS app executable; "
+                  f"got magic={magic:#x}, cpu={cpu_type:#x}, type={file_type}"
+              )
+          print("Verified 64-bit ARM64 Mach-O application executable.")
+          PY
+          mkdir -p dist/Payload
+          cp -R "$app" dist/Payload/TapSprint.app
+
+      - name: Package and validate unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd dist && zip -qr TapSprint-Ubuntu-26.04-unsigned.ipa Payload)
+          zip -T dist/TapSprint-Ubuntu-26.04-unsigned.ipa
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import plistlib
+
+          ipa = Path("dist/TapSprint-Ubuntu-26.04-unsigned.ipa")
+          with ZipFile(ipa) as archive:
+              names = set(archive.namelist())
+              plist_name = "Payload/TapSprint.app/Info.plist"
+              executable = "Payload/TapSprint.app/TapSprint"
+              assert plist_name in names, "IPA is missing the app Info.plist"
+              assert executable in names, "IPA is missing the app executable"
+              info = plistlib.loads(archive.read(plist_name))
+              assert info["CFBundleIdentifier"] == "com.kingjh.tapsprint"
+              assert info["CFBundleExecutable"] == "TapSprint"
+              print(f"IPA layout valid: {ipa} ({ipa.stat().st_size} bytes)")
+              print(f"Bundle ID: {info['CFBundleIdentifier']}; iOS minimum: {info['MinimumOSVersion']}")
+          PY
+          {
+            echo '### Ubuntu IPA result'
+            echo 'TapSprint was compiled from original Objective-C/UIKit source on Ubuntu 26.04 with the pinned Theos toolchain and public iPhoneOS16.5 SDK.'
+            echo 'The IPA has no Apple certificate or provisioning profile. Re-sign it with a valid certificate/profile before installation on a stock iPhone.'
+            echo 'No macOS/Xcode runner, copied Apple SDK, third-party game source, or iPhone runtime test was used.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the IPA artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: TapSprint-Ubuntu-26.04-IPA
+          path: dist/TapSprint-Ubuntu-26.04-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
