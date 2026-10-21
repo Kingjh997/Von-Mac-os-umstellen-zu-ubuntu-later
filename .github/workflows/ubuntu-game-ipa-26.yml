@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 20
     env:
       THEOS: ${{ github.workspace }}/theos
+      THEOS_REF: 304e0799973e8145f32e4ca2de6c747a84b758ce
     steps:
       - name: Check out the game source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -32,6 +33,20 @@ jobs:
             ${{ github.workspace }}/theos/sdks/iPhoneOS16.5.sdk
           key: theos-ubuntu-26.04-toolchain-v2.3.0-sdk0222fd54-iphoneos16.5-v7
 
+      - name: Restore pinned Theos app-build files
+        id: theos-core-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ${{ github.workspace }}/theos/bin
+            ${{ github.workspace }}/theos/include
+            ${{ github.workspace }}/theos/lib
+            ${{ github.workspace }}/theos/makefiles
+            ${{ github.workspace }}/theos/mod
+            ${{ github.workspace }}/theos/vendor/include
+            ${{ github.workspace }}/theos/vendor/lib
+          key: theos-core-ubuntu-26.04-304e0799973e8145f32e4ca2de6c747a84b758ce-v1
+
       - name: Install pinned Theos toolchain and public iPhoneOS SDK
         shell: bash
         run: |
@@ -43,12 +58,21 @@ jobs:
             fi
           done
           if (("${#missing_packages[@]}")); then
-            sudo apt-get update
-            sudo apt-get install -y --no-upgrade "${missing_packages[@]}"
+            if ! sudo apt-get install -y --no-upgrade "${missing_packages[@]}"; then
+              sudo apt-get update
+              sudo apt-get install -y --no-upgrade "${missing_packages[@]}"
+            fi
           fi
-          if [[ ! -d "$THEOS/makefiles" ]]; then
+          if [[ ! -f "$THEOS/makefiles/common.mk" ||
+                ! -f "$THEOS/vendor/include/.git" ||
+                ! -f "$THEOS/vendor/lib/.git" ]]; then
             tmp_theos="$(mktemp -d)"
-            git clone --depth 1 https://github.com/theos/theos "$tmp_theos/theos"
+            git clone --depth 1 --no-tags https://github.com/theos/theos "$tmp_theos/theos"
+            theos_ref="$(git -C "$tmp_theos/theos" rev-parse HEAD)"
+            if [[ "$theos_ref" != "$THEOS_REF" ]]; then
+              echo "::error::Expected Theos $THEOS_REF, got $theos_ref"
+              exit 1
+            fi
             git -C "$tmp_theos/theos" submodule update --init --depth 1 vendor/include vendor/lib
             rsync -a "$tmp_theos/theos/" "$THEOS/"
             rm -rf "$tmp_theos"
