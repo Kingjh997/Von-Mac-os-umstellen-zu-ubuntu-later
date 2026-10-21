@@ -80,10 +80,20 @@ jobs:
             fi
           fi
 
+          need_theos=0
           if [[ ! -f "$THEOS/Prefix.pch" ||
                 ! -f "$THEOS/makefiles/common.mk" ||
                 ! -f "$THEOS/vendor/include/.git" ||
                 ! -f "$THEOS/vendor/lib/.git" ]]; then
+            need_theos=1
+          fi
+          if [[ "${{ matrix.os }}" == "ubuntu-22.04" ]]; then
+            cached_theos_ref="$(git -C "$THEOS" rev-parse HEAD 2>/dev/null || true)"
+            if [[ "$cached_theos_ref" != "$THEOS_REF" ]]; then
+              need_theos=1
+            fi
+          fi
+          if ((need_theos)); then
             tmp_theos="$(mktemp -d)"
             git clone --no-checkout https://github.com/theos/theos "$tmp_theos/theos"
             git -C "$tmp_theos/theos" checkout --detach "$THEOS_REF"
@@ -91,10 +101,12 @@ jobs:
             rsync -a "$tmp_theos/theos/" "$THEOS/"
             rm -rf "$tmp_theos"
           fi
-          actual_theos="$(git -C "$THEOS" rev-parse HEAD)"
-          if [[ "$actual_theos" != "$THEOS_REF" ]]; then
-            echo "::error::Expected Theos $THEOS_REF, got $actual_theos"
-            exit 1
+          if [[ -d "$THEOS/.git" ]]; then
+            actual_theos="$(git -C "$THEOS" rev-parse HEAD)"
+            if [[ "$actual_theos" != "$THEOS_REF" ]]; then
+              echo "::error::Expected Theos $THEOS_REF, got $actual_theos"
+              exit 1
+            fi
           fi
 
           mkdir -p "$THEOS/toolchain" "$THEOS/sdks"
