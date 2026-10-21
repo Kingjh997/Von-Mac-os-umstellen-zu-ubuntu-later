@@ -1,0 +1,204 @@
+name: TapSprint 1 GiB IPA stress comparison
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-large-ipa:
+    name: 1 GiB IPA on ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            label: Ubuntu 22.04
+            packages: fakeroot rsync curl perl zip git make libxml2 libtinfo5 libz3-4 unzip
+          - os: ubuntu-26.04
+            label: Ubuntu 26.04
+            packages: fakeroot rsync curl perl zip git make libxml2-16 libtinfo6 libz3-dev unzip
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      THEOS: ${{ github.workspace }}/theos
+      THEOS_REF: 304e0799973e8145f32e4ca2de6c747a84b758ce
+      SDK_REF: 0222fd5413cf4b9af096f37b4621afa2688572f7
+    steps:
+      - name: Check out TapSprint
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Restore Ubuntu 22.04 toolchain cache
+        if: matrix.os == 'ubuntu-22.04'
+        id: cache22
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ github.workspace }}/theos
+          key: theos-ubuntu-22.04-action4e23d15-sdk0222fd54-v1
+
+      - name: Restore Ubuntu 26.04 SDK and toolchain cache
+        if: matrix.os == 'ubuntu-26.04'
+        id: cache26-toolchain
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ${{ github.workspace }}/theos/toolchain
+            ${{ github.workspace }}/theos/sdks/iPhoneOS16.5.sdk
+          key: theos-ubuntu-26.04-toolchain-v2.3.0-sdk0222fd54-iphoneos16.5-v7
+
+      - name: Restore Ubuntu 26.04 pinned Theos files
+        if: matrix.os == 'ubuntu-26.04'
+        id: cache26-core
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ${{ github.workspace }}/theos/bin
+            ${{ github.workspace }}/theos/include
+            ${{ github.workspace }}/theos/lib
+            ${{ github.workspace }}/theos/makefiles
+            ${{ github.workspace }}/theos/mod
+            ${{ github.workspace }}/theos/Prefix.pch
+            ${{ github.workspace }}/theos/vendor/include
+            ${{ github.workspace }}/theos/vendor/lib
+          key: theos-core-ubuntu-26.04-${{ env.THEOS_REF }}-v2
+
+      - name: Install prerequisites and prepare pinned toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing_packages=()
+          for package in ${{ matrix.packages }}; do
+            if ! dpkg-query -W -f='${db:Status-Status}' "$package" 2>/dev/null | grep -qx installed; then
+              missing_packages+=("$package")
+            fi
+          done
+          if (("${#missing_packages[@]}")); then
+            if ! sudo apt-get install -y --no-upgrade "${missing_packages[@]}"; then
+              sudo apt-get update
+              sudo apt-get install -y --no-upgrade "${missing_packages[@]}"
+            fi
+          fi
+
+          if [[ ! -f "$THEOS/Prefix.pch" ||
+                ! -f "$THEOS/makefiles/common.mk" ||
+                ! -f "$THEOS/vendor/include/.git" ||
+                ! -f "$THEOS/vendor/lib/.git" ]]; then
+            tmp_theos="$(mktemp -d)"
+            git clone --no-checkout https://github.com/theos/theos "$tmp_theos/theos"
+            git -C "$tmp_theos/theos" checkout --detach "$THEOS_REF"
+            git -C "$tmp_theos/theos" submodule update --init --depth 1 vendor/include vendor/lib
+            rsync -a "$tmp_theos/theos/" "$THEOS/"
+            rm -rf "$tmp_theos"
+          fi
+          actual_theos="$(git -C "$THEOS" rev-parse HEAD)"
+          if [[ "$actual_theos" != "$THEOS_REF" ]]; then
+            echo "::error::Expected Theos $THEOS_REF, got $actual_theos"
+            exit 1
+          fi
+
+          mkdir -p "$THEOS/toolchain" "$THEOS/sdks"
+          if [[ ! -x "$THEOS/toolchain/linux/iphone/bin/clang" ]]; then
+            tmp_dl="$(mktemp -d)"
+            curl -fL --retry 3 https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.3.0/swift-5.8-ubuntu22.04.tar.xz -o "$tmp_dl/toolchain.tar.xz"
+            tar -xf "$tmp_dl/toolchain.tar.xz" -C "$THEOS/toolchain"
+            rm -rf "$tmp_dl"
+          fi
+          if [[ ! -d "$THEOS/sdks/iPhoneOS16.5.sdk" ]]; then
+            tmp_sdk="$(mktemp -d)"
+            curl -fL --retry 3 "https://github.com/theos/sdks/archive/$SDK_REF.zip" -o "$tmp_sdk/sdk.zip"
+            unzip -q "$tmp_sdk/sdk.zip" -d "$tmp_sdk"
+            sdk_path="$(find "$tmp_sdk" -type d -name 'iPhoneOS16.5.sdk' -print -quit)"
+            if [[ -z "$sdk_path" ]]; then
+              echo "::error::Pinned SDK archive does not contain iPhoneOS16.5.sdk"
+              exit 1
+            fi
+            mv "$sdk_path" "$THEOS/sdks/"
+            rm -rf "$tmp_sdk"
+          fi
+          test -x "$THEOS/toolchain/linux/iphone/bin/clang"
+          test -d "$THEOS/sdks/iPhoneOS16.5.sdk"
+
+      - name: Build and verify ARM64 game
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -C game clean
+          make -C game -j2 all FINALPACKAGE=1
+          app="$(find game/.theos -type d -name 'TapSprint.app' -print -quit)"
+          if [[ -z "$app" ]]; then
+            echo "::error::Theos did not produce TapSprint.app"
+            exit 1
+          fi
+          cp game/Info.plist "$app/Info.plist"
+          test -f "$app/TapSprint"
+          python3 - "$app/TapSprint" <<'PY'
+          import struct
+          import sys
+          from pathlib import Path
+          header = Path(sys.argv[1]).read_bytes()[:32]
+          if len(header) != 32:
+              raise SystemExit("App executable has a truncated Mach-O header")
+          magic, cpu_type, _, file_type, *_ = struct.unpack("<IiiIIIII", header)
+          if magic != 0xFEEDFACF or cpu_type != 0x0100000C or file_type != 2:
+              raise SystemExit(f"Expected ARM64 Mach-O executable; got magic={magic:#x}, cpu={cpu_type:#x}, type={file_type}")
+          print("Verified 64-bit ARM64 Mach-O application executable.")
+          PY
+
+      - name: Add a generated 1 GiB packaging stress asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$(find game/.theos -type d -name 'TapSprint.app' -print -quit)"
+          mkdir -p "$app/StressAssets"
+          dd if=/dev/urandom of="$app/StressAssets/level-data.bin" bs=16M count=64 iflag=fullblock status=progress
+          test "$(stat -c %s "$app/StressAssets/level-data.bin")" -eq 1073741824
+          echo "Generated exactly 1 GiB of random test data inside the app bundle."
+
+      - name: Package and validate the large unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/Payload
+          app="$(find game/.theos -type d -name 'TapSprint.app' -print -quit)"
+          cp -R "$app" dist/Payload/TapSprint.app
+          (cd dist && zip -0 -qr "TapSprint-${{ matrix.os }}-1GiB-unsigned.ipa" Payload)
+          ipa="dist/TapSprint-${{ matrix.os }}-1GiB-unsigned.ipa"
+          zip -T "$ipa"
+          python3 - "$ipa" <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import plistlib
+          import sys
+
+          ipa = Path(sys.argv[1])
+          with ZipFile(ipa) as archive:
+              entries = {item.filename: item.file_size for item in archive.infolist()}
+              asset = "Payload/TapSprint.app/StressAssets/level-data.bin"
+              plist_name = "Payload/TapSprint.app/Info.plist"
+              executable = "Payload/TapSprint.app/TapSprint"
+              assert entries.get(asset) == 1073741824, f"Expected 1 GiB test asset, got {entries.get(asset)}"
+              assert plist_name in entries and executable in entries, "IPA is missing app files"
+              info = plistlib.loads(archive.read(plist_name))
+              assert info["CFBundleIdentifier"] == "com.kingjh.tapsprint"
+              assert info["CFBundleExecutable"] == "TapSprint"
+              print(f"Validated IPA: {ipa.stat().st_size} bytes")
+              print(f"Embedded random test asset: {entries[asset]} bytes")
+              print(f"Bundle ID: {info['CFBundleIdentifier']}; iOS minimum: {info['MinimumOSVersion']}")
+          PY
+          {
+            echo '### 1 GiB IPA stress test'
+            echo "Runner: ${{ matrix.os }}"
+            echo 'TapSprint was built using pinned Theos and public iPhoneOS 16.5 SDK.'
+            echo 'The IPA includes a generated 1 GiB random packaging fixture. It is not game content and is generated only for this test.'
+            echo 'The IPA is unsigned; a valid Apple certificate and provisioning profile are needed for stock iPhone installation.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the 1 GiB IPA
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: TapSprint-${{ matrix.os }}-1GiB-IPA
+          path: dist/TapSprint-${{ matrix.os }}-1GiB-unsigned.ipa
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
