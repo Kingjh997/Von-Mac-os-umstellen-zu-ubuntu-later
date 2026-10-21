@@ -165,7 +165,10 @@ jobs:
           PY
           {
             echo '### Ubuntu IPA result'
-            echo 'TapSprint was compiled from original Objective-C/UIKit source on Ubuntu 26.04 with the pinned Theos toolchain and public iPhoneOS16.5 SDK.'
+            echo 'TapSprint was compiled from original Objective-C/UIKit source on Ubuntu 26.04 with pinned Theos and public iPhoneOS16.5 SDK.'
+            echo "Theos commit: $THEOS_REF"
+            echo "Toolchain/SDK cache hit: ${{ steps.theos-cache.outputs.cache-hit }}"
+            echo "Theos source cache hit: ${{ steps.theos-core-cache.outputs.cache-hit }}"
             echo 'The IPA has no Apple certificate or provisioning profile. Re-sign it with a valid certificate/profile before installation on a stock iPhone.'
             echo 'No macOS/Xcode runner, copied Apple SDK, third-party game source, or iPhone runtime test was used.'
           } >> "$GITHUB_STEP_SUMMARY"
