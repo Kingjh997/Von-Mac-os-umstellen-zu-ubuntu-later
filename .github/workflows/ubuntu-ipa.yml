@@ -9,6 +9,7 @@ on:
         options:
           - validate
           - repackage
+          - create
         default: validate
 jobs:
   ipa:
@@ -24,11 +25,22 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p input output
-          if ! compgen -G 'input/*.ipa' > /dev/null; then
-            echo "::error::No IPA found in input/. Add a permitted IPA locally or use a private artifact workflow."
-            exit 1
+          if [[ "${{ inputs.mode }}" == "create" ]]; then
+            mapfile -d '' apps < <(find input -maxdepth 1 -type d -name '*.app' -print0 | sort -z)
+            if (( ${#apps[@]} != 1 )); then
+              echo "::error::Create mode expects exactly one .app directory in input/."
+              exit 1
+            fi
+            app_name="$(basename "${apps[0]}" .app)"
+            python3 scripts/ipa_tool.py create "${apps[0]}" --output "output/${app_name}.ipa"
+          else
+            mapfile -d '' ipas < <(find input -maxdepth 1 -type f -name '*.ipa' -print0 | sort -z)
+            if (( ${#ipas[@]} != 1 )); then
+              echo "::error::Validate/repackage mode expects exactly one .ipa file in input/."
+              exit 1
+            fi
+            python3 scripts/ipa_tool.py "${{ inputs.mode }}" "${ipas[0]}" --output output
           fi
-          python3 scripts/ipa_tool.py "${{ inputs.mode }}" input/*.ipa --output output
       - name: Upload result
         if: success()
         uses: actions/upload-artifact@v4
