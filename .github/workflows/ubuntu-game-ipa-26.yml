@@ -53,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           missing_packages=()
-          for package in fakeroot rsync curl perl zip git make libxml2-16 libtinfo6 libz3-dev libplist-utils unzip; do
+          for package in fakeroot rsync curl perl zip git make libxml2-16 libtinfo6 libz3-dev unzip; do
             if ! dpkg-query -W -f='${db:Status-Status}' "$package" 2>/dev/null | grep -qx installed; then
               missing_packages+=("$package")
             fi
@@ -80,7 +80,7 @@ jobs:
             rm -rf "$tmp_theos"
           fi
           mkdir -p "$THEOS/toolchain" "$THEOS/sdks"
-          if ! find "$THEOS/toolchain" \( -type f -o -type l \) -name clang -perm /111 -print -quit | grep -q .; then
+          if [[ ! -x "$THEOS/toolchain/linux/iphone/bin/clang" ]]; then
             tmp_dl="$(mktemp -d)"
             curl -fL --retry 3 https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.3.0/swift-5.8-ubuntu22.04.tar.xz -o "$tmp_dl/toolchain.tar.xz"
             tar -xf "$tmp_dl/toolchain.tar.xz" -C "$THEOS/toolchain"
@@ -107,8 +107,8 @@ jobs:
           echo "Theos: $THEOS"
           test -d "$THEOS/sdks/iPhoneOS16.5.sdk"
           ls -ld "$THEOS/sdks/iPhoneOS16.5.sdk"
-          find "$THEOS/toolchain" \( -type f -o -type l \) -name clang -perm /111 -print -quit
-          du -sh "$THEOS/sdks/iPhoneOS16.5.sdk" "$THEOS/toolchain"
+          test -x "$THEOS/toolchain/linux/iphone/bin/clang"
+          printf "Clang: %s\n" "$THEOS/toolchain/linux/iphone/bin/clang"
 
       - name: Compile and verify the original UIKit game
         shell: bash
