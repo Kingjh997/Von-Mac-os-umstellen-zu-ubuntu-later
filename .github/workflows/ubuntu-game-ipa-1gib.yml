@@ -171,32 +171,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist/Payload
           app="$(find game/.theos -type d -name 'TapSprint.app' -print -quit)"
-          cp -R "$app" dist/Payload/TapSprint.app
-          (cd dist && zip -0 -qr "TapSprint-${{ matrix.os }}-1GiB-unsigned.ipa" Payload)
+          test "$(stat -c %s "$app/StressAssets/level-data.bin")" -eq 1073741824
           ipa="dist/TapSprint-${{ matrix.os }}-1GiB-unsigned.ipa"
-          zip -T "$ipa"
+          python3 scripts/ipa_tool.py create "$app" --output "$ipa" --compression store
+          python3 scripts/ipa_tool.py validate "$ipa" --output dist/validation
           python3 - "$ipa" <<'PY'
-          from pathlib import Path
           from zipfile import ZipFile
-          import plistlib
           import sys
 
-          ipa = Path(sys.argv[1])
-          with ZipFile(ipa) as archive:
-              entries = {item.filename: item.file_size for item in archive.infolist()}
+          with ZipFile(sys.argv[1]) as archive:
               asset = "Payload/TapSprint.app/StressAssets/level-data.bin"
-              plist_name = "Payload/TapSprint.app/Info.plist"
-              executable = "Payload/TapSprint.app/TapSprint"
-              assert entries.get(asset) == 1073741824, f"Expected 1 GiB test asset, got {entries.get(asset)}"
-              assert plist_name in entries and executable in entries, "IPA is missing app files"
-              info = plistlib.loads(archive.read(plist_name))
-              assert info["CFBundleIdentifier"] == "com.kingjh.tapsprint"
-              assert info["CFBundleExecutable"] == "TapSprint"
-              print(f"Validated IPA: {ipa.stat().st_size} bytes")
-              print(f"Embedded random test asset: {entries[asset]} bytes")
-              print(f"Bundle ID: {info['CFBundleIdentifier']}; iOS minimum: {info['MinimumOSVersion']}")
+              info = archive.getinfo(asset)
+              assert info.file_size == 1073741824, f"Expected 1 GiB test asset, got {info.file_size}"
+              print(f"Verified exactly {info.file_size} bytes of test data in the IPA.")
           PY
           {
             echo '### 1 GiB IPA stress test'
