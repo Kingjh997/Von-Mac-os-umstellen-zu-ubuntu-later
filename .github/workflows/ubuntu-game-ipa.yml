@@ -38,7 +38,7 @@ jobs:
           ls -la "$THEOS/sdks"
           find "$THEOS/toolchain" -type f -name clang -perm /111 -print -quit
 
-      - name: Compile the original UIKit game
+      - name: Compile and verify the original UIKit game
         shell: bash
         run: |
           set -euo pipefail
@@ -49,7 +49,22 @@ jobs:
             exit 1
           fi
           test -f "$app/TapSprint"
-          python3 scripts/check_macho_arm64.py "$app/TapSprint"
+          python3 - "$app/TapSprint" <<'PY'
+          import struct
+          import sys
+          from pathlib import Path
+
+          header = Path(sys.argv[1]).read_bytes()[:32]
+          if len(header) != 32:
+              raise SystemExit("App executable has a truncated Mach-O header")
+          magic, cpu_type, file_type, *_ = struct.unpack("<IiiIIIII", header)
+          if magic != 0xFEEDFACF or cpu_type != 0x0100000C or file_type != 2:
+              raise SystemExit(
+                  f"Expected 64-bit arm64 iOS app executable; "
+                  f"got magic={magic:#x}, cpu={cpu_type:#x}, type={file_type}"
+              )
+          print("Verified 64-bit ARM64 Mach-O application executable.")
+          PY
           mkdir -p dist/Payload
           cp -R "$app" dist/Payload/TapSprint.app
 
