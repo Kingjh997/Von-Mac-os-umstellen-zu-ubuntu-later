@@ -31,10 +31,28 @@ jobs:
           key: theos-ubuntu-26.04-action4e23d15-sdk0222fd54-v1
 
       - name: Install pinned Theos toolchain and public iPhoneOS SDK
-        uses: Randomblock1/theos-action@4e23d15886bca77b5f7c462a82567e0de33ebe0b # v1
-        with:
-          theos-dir: ${{ github.workspace }}/theos
-          theos-sdks-branch: 0222fd5413cf4b9af096f37b4621afa2688572f7
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential fakeroot rsync curl perl zip git libxml2-16 libtinfo6 libz3-dev libplist-utils wget unzip
+          if [[ ! -d "$THEOS" ]]; then
+            git clone https://github.com/theos/theos "$THEOS" --recursive
+          fi
+          mkdir -p "$THEOS/toolchain" "$THEOS/sdks"
+          if [[ -z "$(ls -A "$THEOS/toolchain")" ]]; then
+            tmp_dl="$(mktemp -d)"
+            curl -fL --retry 3 https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.3.0/swift-5.8-ubuntu22.04.tar.xz -o "$tmp_dl/toolchain.tar.xz"
+            tar -xf "$tmp_dl/toolchain.tar.xz" -C "$THEOS/toolchain"
+            rm -rf "$tmp_dl"
+          fi
+          if [[ -z "$(ls -A "$THEOS/sdks")" ]]; then
+            tmp_sdk="$(mktemp -d)"
+            curl -fL --retry 3 https://github.com/theos/sdks/archive/0222fd5413cf4b9af096f37b4621afa2688572f7.zip -o "$tmp_sdk/sdk.zip"
+            unzip -q "$tmp_sdk/sdk.zip" -d "$tmp_sdk"
+            cp -R "$tmp_sdk"/*-0222fd5413cf4b9af096f37b4621afa2688572f7/*.sdk "$THEOS/sdks/"
+            rm -rf "$tmp_sdk"
+          fi
 
       - name: Save pinned Theos toolchain and SDK cache
         if: steps.theos-cache.outputs.cache-hit != 'true'
