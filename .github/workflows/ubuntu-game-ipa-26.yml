@@ -28,7 +28,7 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ github.workspace }}/theos
-          key: theos-ubuntu-26.04-action4e23d15-sdk0222fd54-v4
+          key: theos-ubuntu-26.04-action4e23d15-sdk0222fd54-v5
 
       - name: Install pinned Theos toolchain and public iPhoneOS SDK
         shell: bash
@@ -48,19 +48,9 @@ jobs:
           fi
           if [[ -z "$(ls -A "$THEOS/sdks")" ]]; then
             tmp_sdk="$(mktemp -d)"
-            git -C "$tmp_sdk" init
-            git -C "$tmp_sdk" remote add origin https://github.com/theos/sdks
-            git -C "$tmp_sdk" fetch --depth=1 origin 0222fd5413cf4b9af096f37b4621afa2688572f7
-            git -C "$tmp_sdk" checkout --detach FETCH_HEAD
-            shopt -s nullglob
-            sdk_bundles=("$tmp_sdk"/*.sdk)
-            if (( ${#sdk_bundles[@]} == 0 )); then
-              echo "::error::Pinned SDK checkout contains no SDK bundles"
-              find "$tmp_sdk" -maxdepth 2 -print
-              exit 1
-            fi
-            mv "${sdk_bundles[@]}" "$THEOS/sdks/"
-            test -n "$(ls -A "$THEOS/sdks")"
+            curl -fL --retry 3 https://github.com/theos/sdks/archive/0222fd5413cf4b9af096f37b4621afa2688572f7.zip -o "$tmp_sdk/sdk.zip"
+            unzip -q "$tmp_sdk/sdk.zip" -d "$tmp_sdk"
+            mv "$tmp_sdk"/*-0222fd5413cf4b9af096f37b4621afa2688572f7/*.sdk "$THEOS/sdks/"
             rm -rf "$tmp_sdk"
           fi
 
@@ -69,7 +59,7 @@ jobs:
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ github.workspace }}/theos
-          key: theos-ubuntu-26.04-action4e23d15-sdk0222fd54-v4
+          key: theos-ubuntu-26.04-action4e23d15-sdk0222fd54-v5
 
       - name: Report Ubuntu build environment
         shell: bash
