@@ -36,11 +36,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y build-essential fakeroot rsync curl perl zip git libxml2-16 libtinfo6 libz3-dev libplist-utils wget unzip
+          missing_packages=()
+          for package in fakeroot rsync curl perl zip git make libxml2-16 libtinfo6 libz3-dev libplist-utils unzip; do
+            if ! dpkg-query -W -f='${db:Status-Status}' "$package" 2>/dev/null | grep -qx installed; then
+              missing_packages+=("$package")
+            fi
+          done
+          if (("${#missing_packages[@]}")); then
+            sudo apt-get update
+            sudo apt-get install -y --no-upgrade "${missing_packages[@]}"
+          fi
           if [[ ! -d "$THEOS/makefiles" ]]; then
             tmp_theos="$(mktemp -d)"
-            git clone https://github.com/theos/theos "$tmp_theos/theos" --recursive
+            git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/theos/theos "$tmp_theos/theos"
             rsync -a "$tmp_theos/theos/" "$THEOS/"
             rm -rf "$tmp_theos"
           fi
