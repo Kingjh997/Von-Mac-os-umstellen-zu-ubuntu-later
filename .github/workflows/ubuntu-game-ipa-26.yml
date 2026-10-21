@@ -43,9 +43,10 @@ jobs:
             ${{ github.workspace }}/theos/lib
             ${{ github.workspace }}/theos/makefiles
             ${{ github.workspace }}/theos/mod
+            ${{ github.workspace }}/theos/Prefix.pch
             ${{ github.workspace }}/theos/vendor/include
             ${{ github.workspace }}/theos/vendor/lib
-          key: theos-core-ubuntu-26.04-304e0799973e8145f32e4ca2de6c747a84b758ce-v1
+          key: theos-core-ubuntu-26.04-304e0799973e8145f32e4ca2de6c747a84b758ce-v2
 
       - name: Install pinned Theos toolchain and public iPhoneOS SDK
         shell: bash
@@ -63,7 +64,8 @@ jobs:
               sudo apt-get install -y --no-upgrade "${missing_packages[@]}"
             fi
           fi
-          if [[ ! -f "$THEOS/makefiles/common.mk" ||
+          if [[ ! -f "$THEOS/Prefix.pch" ||
+                ! -f "$THEOS/makefiles/common.mk" ||
                 ! -f "$THEOS/vendor/include/.git" ||
                 ! -f "$THEOS/vendor/lib/.git" ]]; then
             tmp_theos="$(mktemp -d)"
